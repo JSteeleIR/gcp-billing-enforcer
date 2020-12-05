@@ -6,16 +6,27 @@ variable "billing_enforcer_project" {
 variable "billing_limits" {
   type = map(object({
     account_id = string
-    alert_limit = number
     enforce_limit = number
     include_credits = bool
   }))
-  description = "A list of billing accounts with alert/enforcement amounts for each."
+  description = "A list of billing accounts with an enforcement limit amounts for each."
 }
 
 variable "enforcement_exempt_projects" {
   type = list(string)
   default = []
+}
+
+variable "slack_token" {
+  type = string
+  default = ""
+  description = "The API key used to post to slack. If not supplied, slack notifications are disabled."
+}
+
+variable "slack_channel" {
+  type = string
+  default = ""
+  description = "The slack channel ID to post to. e.g."
 }
 
 output "billing_enforcer_service_account_email" {

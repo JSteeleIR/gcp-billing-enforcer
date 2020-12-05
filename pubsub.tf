@@ -50,8 +50,15 @@ resource "google_storage_bucket" "enforcer-gcf-source" {
   uniform_bucket_level_access = true
 }
 
+data "archive_file" "enforcer-source" {
+  type = "zip"
+  source_dir = "./enforcer-source"
+  output_path = "./enforcer-source.zip"
+}
+
+
 resource "google_storage_bucket_object" "enforcer-source-archive" {
   name = "index.zip"
   bucket = google_storage_bucket.enforcer-gcf-source.name
-  source = ./enforcer-source/index.zip
+  source = "./enforcer-source.zip"
 }
