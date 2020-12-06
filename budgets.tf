@@ -1,18 +1,19 @@
 resource "google_billing_budget" "enforce_billing_budgets" {
-  for_each = vars.billing_limits
+  for_each = var.billing_limits
+  provider = google-beta
 
-  billing_account = each.account_id
-  display_name = "Enforcment Budget for ${{each.key}}, Account: ${{each.account_id}}"
+  billing_account = each.value.account_id
+  display_name = "Enforcement Budget for ${each.key}."
   amount {
     specified_amount {
       currency_code = "USD"
-      units = each.enforce_limit
+      units = each.value.enforce_limit
     }
 
   }
 
   budget_filter {
-    credit_types_treatment = each.include_credits ? "INCLUDE_ALL_CREDITS" : "EXLUCDE_ALL_CREDITS"
+    credit_types_treatment = each.value.include_credits ? "INCLUDE_ALL_CREDITS" : "EXLUCDE_ALL_CREDITS"
   }
 
   threshold_rules {

@@ -8,14 +8,18 @@ from slack.errors import SlackApiError
 PROJECT_ID = os.getenv('GCP_PROJECT')
 PROJECT_NAME = f'projects/{PROJECT_ID}'
 
-def stop_billing(data, context):
-    pubsub_data = base64.b64decode(data['data']).decode('utf-8')
-    pubsub_json = json.loads(pubsub_data)
-    billing_account = pubsub_json['billingAccountId']
-    cost_amount = pubsub_json['costAmount']
-    budget_amount = pubsub_json['budgetAmount']
+def stop_billing(event, context):
+    try:
+        pubsub_data = base64.b64decode(event['data']).decode('utf-8')
+        pubsub_json = json.loads(pubsub_data)
+        billing_account = event['attributes']['billingAccountId']
+        cost_amount = pubsub_json['costAmount']
+        budget_amount = pubsub_json['budgetAmount']
+    except KeyError:
+        print(f"Unable to extract budget alert information from pubusb event:\n {event}")
+        pass
 
-    excluded = os.getnv("ENFORCE_EXEMPT_PROJECTS").split(',')
+    excluded = os.getenv("ENFORCE_EXEMPT_PROJECTS").split(',')
     if cost_amount <= budget_amount:
         print(f'No action necessary. (Current cost: {cost_amount}, Budget: {budget_amount})')
         _send_to_slack(f'Billing account "{billing_account}" has accrued a cost of {cost_amount}. Account has a budget of {budget_amount}.')
@@ -122,8 +126,8 @@ def _send_to_slack(text):
                 'text'   : text
             }
         )
-    except SlackApiError:
-        print('Error posting to Slack')
+    except SlackApiError as e:
+        print('Error posting to Slack: {}'.format(e.response["error"]))
 
 def notify_slack(data, context):
     _send_to_slack(_extract_pubsub_text(data,context))

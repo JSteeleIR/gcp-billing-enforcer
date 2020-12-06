@@ -1,5 +1,5 @@
 variable "billing_enforcer_project" {
-  type = stirng
+  type = string
   description = "The project which will run the billing enforcement infrastrcuture (Pub/Subs & Enforcement GCFs)."
 }
 
@@ -15,6 +15,11 @@ variable "billing_limits" {
 variable "enforcement_exempt_projects" {
   type = list(string)
   default = []
+}
+
+variable "gcf_source_bucket_name" {
+  type = string
+  description = "The name of the bucket to store the enforcer GCF function in."
 }
 
 variable "slack_token" {
