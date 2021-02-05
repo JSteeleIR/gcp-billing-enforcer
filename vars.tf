@@ -36,5 +36,5 @@ variable "slack_channel" {
 
 output "billing_enforcer_service_account_email" {
   value = google_service_account.billing_enforcer.email
-  description = "The email address of the Billing Enforcer service account. MUST be added as a Billing Account Admin to the billing account, to be able to disable billing on over-budget projects."
+  description = "The email address of the Billing Enforcer service account. MUST be granted roles/billing.projectManager over the projects (or org) to be able to disable billing for overbudget projects."
 }
