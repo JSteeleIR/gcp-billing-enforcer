@@ -27,7 +27,8 @@ resource "google_cloudfunctions_function" "billing_enforcer" {
   runtime = "python37"
   available_memory_mb = 128
   event_trigger {
-    event_type = "google.pubsub.topic.publish" resource = google_pubsub_topic.billing_enforcement_topic.id
+    event_type = "google.pubsub.topic.publish"
+    resource = google_pubsub_topic.billing_enforcement_topic.id
   }
 
   service_account_email = google_service_account.billing_enforcer.email
@@ -61,7 +62,7 @@ data "archive_file" "enforcer-source" {
 
 
 resource "google_storage_bucket_object" "enforcer-source-archive" {
-  name = "index.zip"
+  name = "index.zip#${data.archive_file.enforcer-source.output_md5}"
   bucket = google_storage_bucket.enforcer-gcf-source.name
-  source = "${path.module}/enforcer-source.zip"
+  source = data.archive_file.enforcer-source.output_path
 }

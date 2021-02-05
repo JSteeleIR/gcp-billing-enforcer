@@ -8,44 +8,72 @@ from slack.errors import SlackApiError
 PROJECT_ID = os.getenv('GCP_PROJECT')
 PROJECT_NAME = f'projects/{PROJECT_ID}'
 
+
 def stop_billing(event, context):
     try:
         pubsub_data = base64.b64decode(event['data']).decode('utf-8')
         pubsub_json = json.loads(pubsub_data)
         billing_account = event['attributes']['billingAccountId']
+        budget_name = pubsub_json['budgetDisplayName']
         cost_amount = pubsub_json['costAmount']
         budget_amount = pubsub_json['budgetAmount']
     except KeyError:
-        print(f"Unable to extract budget alert information from pubusb event:\n {event}")
+        print(
+            f"Unable to extract budget alert information from pubusb event:\n {event}")
         pass
 
-    excluded = os.getenv("ENFORCE_EXEMPT_PROJECTS").split(',')
-    if cost_amount <= budget_amount:
-        print(f'No action necessary. (Current cost: {cost_amount}, Budget: {budget_amount})')
-        _send_to_slack(f'Billing account "{billing_account}" has accrued a cost of {cost_amount}. Account has a budget of {budget_amount}.')
+    if hasattr(pubsub_json, "alertThresholdExceeded"):
+        threshold_percent = pubsub_json['alertThresholdExceeded']
+        is_forecasted = no
+        print(
+                f'Budget alert threshold exceeded for budget "{budget_name}":\n Threshold: {threshold_percent}, Current Cost: {cost_amount}, Budget: {budget_amount}')
+    elif hasattr(pubsub_json, "forecastThresholdExceeded"):
+        threshold_percent = pubsub_json['forecastThresholdExceeded']
+        is_forecasted = yes
+        print(
+                f'Budget alert threshold forcasted for budget "{budget_name}":\n Threshold: {threshold_percent}, Current Cost: {cost_amount}, Budget: {budget_amount}')
+    else:
+        print(f'No budget alert threshold (real or forecasted) exceeded for budget "{budget_name}".')
+        return
+
+
+    if is_forecasted:
+        _send_to_slack(
+            f'Billing account "{billing_account}" is forecasted to hit {threshold_percent*100}% of budget\nCurrent Accrued cost: {cost_amount}. Budget: {budget_amount}.')
+
+    elif cost_amount <= budget_amount:
+        print(
+            f'No action necessary for budget "{budget_name}". (Current cost: {cost_amount}, Budget: {budget_amount})')
+        _send_to_slack(
+            f'Billing account "{billing_account}" has hit {threshold_percent*100}% of budget "{budget_name}"\nAccrued cost: {cost_amount}. Budget: {budget_amount}.')
         return
     else:
-        print(f'Account Overbudget. (Current cost: {cost_amount}, Budget: {budget_amount})')
-        _send_to_slack(f'Billing account "{billing_account}" has exceeded budget! (Current Cost: {cost_amount}, Budget: {budget_amount})\n Disabling Billing on non-exempted projects...')
-
+        print(
+                f'Account "{billing_account}" Overbudget (Budget name: "{budget_name}").\n (Current cost: {cost_amount}, Budget: {budget_amount})')
+        _send_to_slack(
+            f'Billing account "{billing_account}" has exceeded budget "{budget_name}"!\n (Current Cost: {cost_amount}, Budget: {budget_amount})\n Disabling Billing on non-exempted projects...')
 
     if PROJECT_ID is None:
         print('No project specified with environment variable')
         return
 
+    excluded = os.getenv("ENFORCE_EXEMPT_PROJECTS").split(',')
     billing = discovery.build(
         'cloudbilling',
         'v1',
         cache_discovery=False,
     )
 
-    projects = billing.billingAccounts().projects().list(name=billing_account).execute()
+    projects = billing.billingAccounts().projects().list(
+        name=billing_account).execute()
     projectclient = billing.projects()
 
     for p in projects:
         if p in excluded:
             print(f'Project {p} is excluded from enforcement!')
-            _send_to_slack(f'Project "{p}" is excluded from billing enforcement.')
+            _send_to_slack(
+                f'Project "{p}" is excluded from billing enforcement.')
+
             continue
 
         billing_enabled = __is_billing_enabled(p, projectclient)
@@ -64,12 +92,15 @@ def __is_billing_enabled(project_name, projectclient):
     """
     try:
         res = projectclient.getBillingInfo(name=project_name).execute()
+
         return res['billingEnabled']
     except KeyError:
         # If billingEnabled isn't part of the return, billing is not enabled
+
         return False
     except Exception:
         print('Unable to determine if billing is enabled on specified project, assuming billing is enabled')
+
         return True
 
 
@@ -80,12 +111,15 @@ def __disable_billing_for_project(project_name, projectclient):
     """
     body = {'billingAccountName': ''}  # Disable billing
     try:
-        res = projectclient.updateBillingInfo(name=project_name, body=body).execute()
+        res = projectclient.updateBillingInfo(
+            name=project_name, body=body).execute()
         print(f'Billing disabled: {json.dumps(res)}')
         _send_to_slack(f'Billing disabled on project "{project_name}".')
     except Exception:
         print('Failed to disable billing, possibly check permissions')
-        _send_to_slack(f'!!! FAILED to disable Billing on project "{project_name}"!!!')
+        _send_to_slack(
+            f'!!! FAILED to disable Billing on project "{project_name}"!!!')
+
 
 def _extract_pubsub_text(data, context):
 
@@ -105,14 +139,17 @@ def _extract_pubsub_text(data, context):
 
     # This is just a quick dump of the budget data (or an empty string)
     # You can modify and format the message to meet your needs
+
     return f'{notification_attr}, {notification_data}'
 
+
 def _send_to_slack(text):
-    #TODO: Convert to the slack 'blocks' API to be able to make formatting more attention-grabbing.
+    # TODO: Convert to the slack 'blocks' API to be able to make formatting more attention-grabbing.
 
     token = os.getenv("SLACK_ACCESS_TOKEN")
 
     # If SLACK_ACCESS_TOKEN not present, disable notifying slack.
+
     if not token or token == "":
         return
 
@@ -123,11 +160,12 @@ def _send_to_slack(text):
             'chat.postMessage',
             json={
                 'channel': os.getenv("SLACK_CHANNEL"),
-                'text'   : text
+                'text': text
             }
         )
     except SlackApiError as e:
         print('Error posting to Slack: {}'.format(e.response["error"]))
 
+
 def notify_slack(data, context):
-    _send_to_slack(_extract_pubsub_text(data,context))
+    _send_to_slack(_extract_pubsub_text(data, context))
