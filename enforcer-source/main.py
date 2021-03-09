@@ -10,14 +10,14 @@ PROJECT_ID = os.getenv('GCP_PROJECT')
 PROJECT_NAME = f'projects/{PROJECT_ID}'
 
 _ALERT_THRESHOLD_MESSAGE = """Billing account "{billing_account}" has exceeded alert threshold for budget "{budget_name}."
-Threshold: {threshold_percent}%, Current Cost: {cost_amount}, Budget: {budget_amount}
+Threshold: {threshold_percent:.2f}%, Current Cost: {cost_amount}, Budget: {budget_amount}
 """
 _OVERBUDGET_MESSAGE = """Billing account "{billing_account}" has exceeded budget "{budget_name}"!
 (Current Cost: {cost_amount}, Budget: {budget_amount})
 Disabling Billing on non-exempted projects...
 """
 _FORECASTED_ALERT_THRESHOLD_MESSAGE = """
-Billing account "{billing_account}" is forecasted to hit {threshold_percent}% of budget "{budget_name}"
+Billing account "{billing_account}" is forecasted to hit {threshold_percent:.2f}% of budget "{budget_name}"
 Current Accrued cost: {cost_amount}. Budget: {budget_amount}.
 """
 _NO_THRESHOLD_MESSAGE = """'No budget alert threshold (real or forecasted) exceeded for budget "{budget_name}".
@@ -35,19 +35,22 @@ def stop_billing(event, context):
         cost_amount = pubsub_json['costAmount']
         budget_amount = pubsub_json['budgetAmount']
     except json.decoder.JSONDecodeError:
-        _log_structured(
-            f"Unable to decode message: {event}", log_severity.ERROR)
+        _log_structured(f"Unable to decode message: {event}",
+                        log_severity.ERROR)
         pass
     except KeyError:
         print(
-            f"Unable to extract budget alert information from pubusb event:\n {event}", log_severity.ERROR)
+            f"Unable to extract budget alert information from pubusb event:\n {event}",
+            log_severity.ERROR)
         pass
 
     if "alertThresholdExceeded" in pubsub_json:
         threshold_percent = pubsub_json['alertThresholdExceeded'] * 100
         alert_message = _ALERT_THRESHOLD_MESSAGE.format(
-            budget_name=budget_name, billing_account=billing_account,
-            threshold_percent=threshold_percent, cost_amount=cost_amount,
+            budget_name=budget_name,
+            billing_account=billing_account,
+            threshold_percent=threshold_percent,
+            cost_amount=cost_amount,
             budget_amount=budget_amount)
         print(alert_message)
 
@@ -57,8 +60,10 @@ def stop_billing(event, context):
             return
         else:
             overbudget_message = _OVERBUDGET_MESSAGE.format(
-                budget_name=budget_name, billing_account=billing_account,
-                threshold_percent=threshold_percent, cost_amount=cost_amount,
+                budget_name=budget_name,
+                billing_account=billing_account,
+                threshold_percent=threshold_percent,
+                cost_amount=cost_amount,
                 budget_amount=budget_amount)
             _log_and_send_to_slack(overbudget_message, log_severity.ALERT)
             disable_billing_account(billing_account)
@@ -66,15 +71,19 @@ def stop_billing(event, context):
     elif "forecastThresholdExceeded" in pubsub_json:
         threshold_percent = pubsub_json['forecastThresholdExceeded'] * 100
         forecasted_message = _FORECASTED_ALERT_THRESHOLD_MESSAGE.format(
-            budget_name=budget_name, billing_account=billing_account,
-            threshold_percent=threshold_percent, cost_amount=cost_amount,
+            budget_name=budget_name,
+            billing_account=billing_account,
+            threshold_percent=threshold_percent,
+            cost_amount=cost_amount,
             budget_amount=budget_amount)
 
         _log_and_send_to_slack(forecasted_message, log_severity.WARNING)
     else:
-        _log_and_send_to_slack(_NO_THRESHOLD_MESSAGE.format(
-            budget_name=budget_name, billing_account=billing_account,
-            cost_amount=cost_amount, budget_amount=budget_amount))
+        _log_structured(
+            _NO_THRESHOLD_MESSAGE.format(budget_name=budget_name,
+                                         billing_account=billing_account,
+                                         cost_amount=cost_amount,
+                                         budget_amount=budget_amount))
 
 
 def disable_billing_account(billing_account):
@@ -91,14 +100,15 @@ def disable_billing_account(billing_account):
         projectclient = billing.projects()
     except Exception as e:
         _log_and_send_to_slack(
-            f'Error while obtaining projects for billing account "{billing_account}": {e}', log_severity.ERROR)
+            f'Error while obtaining projects for billing account "{billing_account}": {e}',
+            log_severity.ERROR)
         pass
 
     for p in projects:
         if p in excluded:
             excluded_project_message = _PROJECT_EXCLUDED_MESSAGE.format(p=p)
-            _log_and_send_to_slack(
-                excluded_project_message, log_severity.WARNING)
+            _log_and_send_to_slack(excluded_project_message,
+                                   log_severity.WARNING)
 
             continue
 
@@ -126,7 +136,8 @@ def __is_billing_enabled(project_name, projectclient):
         return False
     except Exception:
         _log_and_send_to_slack(
-            f'Unable to determine if billing is enabled on project "{project_name}", assuming billing is enabled', log_severity.WARNING)
+            f'Unable to determine if billing is enabled on project "{project_name}", assuming billing is enabled',
+            log_severity.WARNING)
 
         return True
 
@@ -138,14 +149,15 @@ def __disable_billing_for_project(project_name, projectclient):
     """
     body = {'billingAccountName': ''}  # Disable billing
     try:
-        res = projectclient.updateBillingInfo(
-            name=project_name, body=body).execute()
+        res = projectclient.updateBillingInfo(name=project_name,
+                                              body=body).execute()
         print(f'Billing disabled: {json.dumps(res)}')
         _log_and_send_to_slack(
             f'Billing disabled on project "{project_name}".')
     except Exception as e:
         _log_and_send_to_slack(
-            f'!!! FAILED to disable Billing on project "{project_name}"!!! Check that the billing enforcer has permssions!!! Error: {e}', log_severity.CRITICAL)
+            f'!!! FAILED to disable Billing on project "{project_name}"!!! Check that the billing enforcer has permssions!!! Error: {e}',
+            log_severity.CRITICAL)
 
 
 def _extract_pubsub_text(data, context):
@@ -170,22 +182,24 @@ def _extract_pubsub_text(data, context):
     return f'{notification_attr}, {notification_data}'
 
 
-def _log_structured(message, severity="NOTICE"):
+def _log_structured(message, severity=log_severity.NOTICE):
     # Build structured log messages as an object.
     global_log_fields = {}
 
-    # Add log correlation to nest all log messages.
-    trace_header = request.headers.get("X-Cloud-Trace-Context")
+    # TODO: Implment trace_headers/nested logging once the necessary fields are exposed.
+    # https://github.com/GoogleCloudPlatform/functions-framework/issues/34
 
-    if trace_header and PROJECT_ID:
-        trace = trace_header.split("/")
-        global_log_fields[
-            "logging.googleapis.com/trace"
-        ] = f"projects/{PROJECT_ID}/traces/{trace[0]}"
+    # Add log correlation to nest all log messages.
+    #trace_header = request.headers.get("X-Cloud-Trace-Context")
+
+    #if trace_header and PROJECT_ID:
+    #    trace = trace_header.split("/")
+    #    global_log_fields[
+    #        "logging.googleapis.com/trace"] = f"projects/{PROJECT_ID}/traces/{trace[0]}"
 
     # Complete a structured log entry.
     entry = dict(
-        severity=severity,
+        severity=log_severity.LogSeverity.Name(severity),
         message=message,
         # Log viewer accesses 'component' as jsonPayload.component'.  component="arbitrary-property",
         **global_log_fields,
@@ -193,9 +207,9 @@ def _log_structured(message, severity="NOTICE"):
     print(entry)
 
 
-def _log_and_send_to_slack(text, severity="NOTICE"):
+def _log_and_send_to_slack(text, severity=log_severity.NOTICE):
 
-    _log_structured(text)
+    _log_structured(text, severity)
     # TODO: Convert to the slack 'blocks' API to be able to make formatting more attention-grabbing.
 
     token = os.getenv("SLACK_ACCESS_TOKEN")
@@ -208,13 +222,11 @@ def _log_and_send_to_slack(text, severity="NOTICE"):
     slack_client = slack.WebClient(token=token)
 
     try:
-        slack_client.api_call(
-            'chat.postMessage',
-            json={
-                'channel': os.getenv("SLACK_CHANNEL"),
-                'text': text
-            }
-        )
+        slack_client.api_call('chat.postMessage',
+                              json={
+                                  'channel': os.getenv("SLACK_CHANNEL"),
+                                  'text': text
+                              })
     except SlackApiError as e:
         print('Error posting to Slack: {}'.format(e.response["error"]))
 
